@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.example
+
+# Build / tooling
+dist/
+build/
+.vite/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# ML artifacts (keep the committed placeholder)
+backend/app/ml/saved_models/*.ubj
+backend/app/ml/saved_models/*.bin
+# Local ESA training download and generated trained model
+/backend/data/esa_kelvins_raw/
+/backend/app/ml/saved_models/risk_model_esa.json

@@ -1,0 +1,163 @@
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+:root {
+  color-scheme: dark;
+  --hud-bg: #05080a;
+  --hud-cyan: #00f2ff;
+  --hud-amber: #ffa500;
+  --hud-line: rgba(0, 242, 255, 0.28);
+  --hud-muted: rgba(186, 214, 226, 0.55);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: var(--hud-bg);
+  color: #e8f4f8;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.font-mono {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.hud-grid {
+  background-color: #05080a;
+  background-image:
+    linear-gradient(rgba(0, 242, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 242, 255, 0.035) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
+
+.hud-panel {
+  position: relative;
+  border: 1px solid var(--hud-line);
+  background: rgba(5, 10, 14, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.hud-corners::before,
+.hud-corners::after,
+.hud-corners > .hud-corner-br,
+.hud-corners > .hud-corner-bl {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+
+.hud-corners::before {
+  top: -1px;
+  left: -1px;
+  border-top: 1px solid var(--hud-cyan);
+  border-left: 1px solid var(--hud-cyan);
+}
+
+.hud-corners::after {
+  top: -1px;
+  right: -1px;
+  border-top: 1px solid var(--hud-cyan);
+  border-right: 1px solid var(--hud-cyan);
+}
+
+.hud-corners .hud-corner-bl {
+  bottom: -1px;
+  left: -1px;
+  border-bottom: 1px solid var(--hud-cyan);
+  border-left: 1px solid var(--hud-cyan);
+}
+
+.hud-corners .hud-corner-br {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 1px solid var(--hud-cyan);
+  border-right: 1px solid var(--hud-cyan);
+}
+
+.hud-scan {
+  animation: hud-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes hud-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.hud-ring {
+  animation: hud-spin 12s linear infinite;
+}
+
+@keyframes hud-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hud-glow-cyan {
+  box-shadow: 0 0 16px rgba(0, 242, 255, 0.25);
+}
+
+.hud-glow-amber {
+  box-shadow: 0 0 16px rgba(255, 165, 0, 0.25);
+}
+
+.hud-reticle-cross {
+  position: absolute;
+  pointer-events: none;
+}
+
+.hud-reticle-cross::before,
+.hud-reticle-cross::after {
+  content: "";
+  position: absolute;
+  background: var(--hud-line);
+}
+
+.radar-sweep {
+  animation: radar-sweep-spin 4s linear infinite;
+  transform-origin: center center;
+}
+
+@keyframes radar-sweep-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.scrollbar-hud::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-hud::-webkit-scrollbar-thumb {
+  background: rgba(0, 242, 255, 0.35);
+  border-radius: 2px;
+}
+
+input[type="range"].hud-range {
+  appearance: none;
+  height: 2px;
+  background: rgba(0, 242, 255, 0.35);
+  outline: none;
+}
+
+input[type="range"].hud-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #00f2ff;
+  box-shadow: 0 0 8px #00f2ff;
+}
