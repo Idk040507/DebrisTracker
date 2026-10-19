@@ -19,11 +19,24 @@ def build_prompt(context: dict, prediction: dict, shap_values: list[dict]) -> st
         f"- {item.get('feature')}: value={item.get('value')}, shap={_format_small_value(item.get('shap'))}"
         for item in top
     )
+    features = context.get("features") if isinstance(context.get("features"), dict) else {}
+    model_name = "XGBoost" if prediction.get("source") == "xgboost" else str(prediction.get("source", "Model")).capitalize()
+    model_estimate = _format_small_value(prediction.get("risk_score"))
+    risk_lines = [f"{model_name} estimate: {model_estimate} (a model prediction, not the CDM-reported Pc)."]
+    if features.get("feature_source") == "spacetrack-cdm" and features.get("pc") not in (None, ""):
+        risk_lines.append(
+            f"CDM-reported Pc: {_format_small_value(features.get('pc'))} "
+            "(report this separately; do not substitute it for or conflate it with the model estimate)."
+        )
     return (
         "You are an orbital safety officer briefing a spacecraft operator.\n"
-        "Write a concise, non-alarmist close-approach briefing.\n\n"
+        "Write a concise, non-alarmist close-approach briefing. Distinguish model estimates from values "
+        "reported by a CDM. Do not make maneuver recommendations or claim a conjunction is safe based "
+        "only on this prototype model.\n\n"
         f"Object context: {context}\n"
-        f"Risk prediction: {prediction}\n"
+        "Risk values:\n"
+        + "\n".join(risk_lines)
+        + "\n"
         f"Top SHAP drivers:\n{drivers or '- none'}\n"
     )
 
@@ -154,19 +167,22 @@ async def generate_briefing(context: dict, prediction: dict, shap_values: list[d
             assessment_basis = "Modeled close-approach inputs; no actual CDM available"
         else:
             assessment_basis = "CDM input source not identified"
+        cdm_pc = feature_data.get("pc") if feature_source == "spacetrack-cdm" else None
+        model_name = "XGBoost" if prediction.get("source") == "xgboost" else str(prediction.get("source", "Model")).capitalize()
         driver_summary = ", ".join(
             f"{d.get('feature')} ({_format_small_value(d.get('shap'))})" for d in top_drivers
         ) if top_drivers else "standard conjunction profile"
         risk_score = prediction.get("risk_score", 0.0)
-        risk_level = "ELEVATED CONJUNCTION RISK" if risk_score > 0.4 else "NOMINAL MONITORING"
 
         return (
-            f"[ORBITAL SAFETY BRIEFING - ML TACTICAL ADVISORY]\n"
+            f"[ORBITAL SAFETY BRIEFING - EXPERIMENTAL MODEL OUTPUT]\n"
             f"Object: {context.get('name', 'Acquired Target')} (NORAD {context.get('id', 'N/A')})\n"
-            f"Orbit Class: {context.get('orbitClass', 'LEO')} | Status: {risk_level}\n"
-            f"Assessed Risk Score: {_format_small_value(risk_score, decimals=4)} (Source: {prediction.get('source', 'XGBoost')})\n"
-            f"Assessment Basis: {assessment_basis}\n\n"
-            f"Key Conjunction Drivers (SHAP):\n"
-            f"• {driver_summary}\n\n"
-            f"Operator Guidance: Maintain radar acquisition and track relative velocity. No immediate maneuver burn required under current probability threshold."
+            f"Orbit Class: {context.get('orbitClass', 'LEO')}\n"
+            f"{model_name} estimate: {_format_small_value(risk_score)}\n"
+            + (f"CDM-reported Pc: {_format_small_value(cdm_pc)} (separate reported value)\n" if cdm_pc is not None else "")
+            + f"Assessment Basis: {assessment_basis}\n\n"
+            + f"Key Conjunction Drivers (SHAP):\n"
+            + f"• {driver_summary}\n\n"
+            + "Note: This prototype model output is not an operational maneuver recommendation. "
+            "Use authoritative conjunction data and qualified flight-dynamics review for safety decisions."
         )

@@ -5,6 +5,13 @@ import ShinyText from "../../reactbits/ShinyText.jsx";
 import DecryptedText from "../../reactbits/DecryptedText.jsx";
 import ShapChart from "./ShapChart.jsx";
 
+function formatProbability(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return number !== 0 && Math.abs(number) < 0.001 ? number.toExponential(3) : number.toFixed(6);
+}
+
 export default function Telemetry({
   selected,
   tracked,
@@ -12,10 +19,23 @@ export default function Telemetry({
   briefing,
   shap,
   score,
+  predictionSource,
   features,
   loading,
   onAnalyze,
 }) {
+  const hasCdmPc =
+    features?.feature_source === "spacetrack-cdm" &&
+    features.pc !== null &&
+    features.pc !== undefined &&
+    Number.isFinite(Number(features.pc));
+  const estimateLabel =
+    predictionSource === "xgboost"
+      ? "XGBoost estimate"
+      : predictionSource === "heuristic"
+        ? "Heuristic estimate"
+        : "Risk estimate";
+
   return (
     <aside className="relative z-20 flex w-[320px] flex-col border-l border-[var(--hud-line)]">
       <SpotlightCard className="flex h-full flex-col bg-[#05080a]/80 p-5" spotlightColor="rgba(0, 242, 255, 0.08)">
@@ -84,7 +104,9 @@ export default function Telemetry({
               </div>
               <div className="bg-white/5 p-2 rounded border border-white/5">
                 Inclination
-                <p className="mt-1 text-slate-100 font-semibold">{selected.inclination?.toFixed?.(2) ?? selected.inclination}°</p>
+                <p className="mt-1 text-slate-100 font-semibold">
+                  {Number.isFinite(Number(selected.inclination)) ? `${Number(selected.inclination).toFixed(2)}°` : "—"}
+                </p>
               </div>
               <div className="bg-white/5 p-2 rounded border border-white/5">
                 Periapsis
@@ -92,15 +114,28 @@ export default function Telemetry({
               </div>
             </dl>
 
-            <div className="mt-4 flex items-center justify-between font-mono text-xs text-slate-300 bg-black/40 p-2.5 rounded border border-[var(--hud-line)]">
-              <span>Risk score:</span>
-              <span className="font-bold text-[var(--hud-amber)]">{score ?? "—"}</span>
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between gap-2 font-mono text-xs text-slate-300 bg-black/40 p-2.5 rounded border border-[var(--hud-line)]">
+                <span>{estimateLabel}</span>
+                <span className="font-bold text-[var(--hud-amber)]">{formatProbability(score)}</span>
+              </div>
+              {hasCdmPc ? (
+                <div className="bg-[var(--hud-cyan)]/5 p-2.5 rounded border border-[var(--hud-cyan)]/30">
+                  <div className="flex items-center justify-between gap-2 font-mono text-xs text-slate-200">
+                    <span>CDM-reported Pc</span>
+                    <span className="font-bold text-[var(--hud-cyan)]">{formatProbability(features.pc)}</span>
+                  </div>
+                  <p className="mt-1 font-mono text-[9px] leading-4 text-slate-500">
+                    Reported by Space-Track; separate from the model estimate.
+                  </p>
+                </div>
+              ) : null}
             </div>
             <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">
               {features?.feature_source === "spacetrack-cdm"
-                ? `Space-Track CDM${features?.conjunction_name ? ` vs ${features.conjunction_name}` : ""}`
+                ? `Space-Track CDM${features?.cdm_id ? ` · ${features.cdm_id}` : ""}${features?.conjunction_name ? ` vs ${features.conjunction_name}` : ""}`
                 : features?.feature_source
-                  ? "Modeled close approach"
+                  ? "Modeled close approach · no actual CDM"
                   : "Awaiting score"}
             </p>
 

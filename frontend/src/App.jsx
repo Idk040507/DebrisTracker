@@ -1,6 +1,6 @@
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import EarthGlobe from "./components/canvas/EarthGlobe.jsx";
 import DebrisField from "./components/canvas/DebrisField.jsx";
 import OrbitPath from "./components/canvas/OrbitPath.jsx";
@@ -22,14 +22,44 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [telemetryOpen, setTelemetryOpen] = useState(true);
   const [camera, setCamera] = useState({ zoom: "1.00", tilt: "23.4" });
-  const { objects, timeScale, setTimeScale, loading, lastSync, live, refresh, stats, feedSource } = useOrbitalData(category);
-  const { briefing, shap, score, features, analyze, loading: analyzing } = useRiskAnalysis(selected);
+  const {
+    objects,
+    cdmObjects,
+    cdmError,
+    cdmLoading,
+    timeScale,
+    setTimeScale,
+    loading,
+    lastSync,
+    live,
+    refresh,
+    stats,
+    feedSource,
+  } = useOrbitalData(category);
+  const { briefing, shap, score, predictionSource, features, analyze, loading: analyzing } = useRiskAnalysis(selected);
+  const cdmQueueObjects = useMemo(() => {
+    const catalogById = new Map(objects.map((object) => [String(object.id), object]));
+    return cdmObjects.map((cdmObject) => {
+      const catalogObject = catalogById.get(String(cdmObject.id));
+      return {
+        ...(catalogObject || {}),
+        ...cdmObject,
+        id: String(cdmObject.id),
+        name: cdmObject.name || catalogObject?.name || `NORAD ${cdmObject.id}`,
+        orbitClass: catalogObject?.orbitClass || "CDM EVENT",
+        inclination: catalogObject?.inclination,
+        periapsis: catalogObject?.periapsis,
+        elevated: catalogObject?.elevated || false,
+        hasOrbitData: Boolean(catalogObject),
+      };
+    });
+  }, [cdmObjects, objects]);
 
   return (
     <ClickSpark sparkColor="#00f2ff" sparkCount={10} sparkRadius={22} duration={450}>
       <div className="hud-grid relative flex h-full min-h-0 w-full flex-col overflow-hidden text-slate-100">
         <Noise patternAlpha={8} patternRefreshInterval={4} />
-        <Header live={live} onRefresh={refresh} loading={loading} />
+        <Header live={live} source={feedSource} cdmLive={cdmObjects.length > 0} onRefresh={refresh} loading={loading} />
 
         <div className="relative flex min-h-0 flex-1">
           <SideRail
@@ -52,7 +82,7 @@ export default function App() {
                 <Stars radius={90} depth={50} count={5000} factor={3} fade />
                 <EarthGlobe />
                 <DebrisField objects={objects} selectedId={selected?.id} onSelect={setSelected} />
-                {selected ? <OrbitPath object={selected} /> : null}
+                {selected && selected.hasOrbitData !== false ? <OrbitPath object={selected} /> : null}
                 <CameraHud onChange={setCamera} />
                 <OrbitControls enablePan={false} minDistance={2.2} maxDistance={10} />
               </Canvas>
@@ -60,8 +90,22 @@ export default function App() {
             </section>
 
             <div className="mt-3 grid h-[200px] min-h-[180px] grid-cols-2 gap-3">
-              <SignalQueue objects={objects} selected={selected} onSelect={setSelected} />
-              <FeedHealth live={live} lastSync={lastSync} tracked={stats.tracked} loading={loading} source={feedSource} />
+              <SignalQueue
+                objects={objects}
+                cdmObjects={cdmQueueObjects}
+                cdmError={cdmError}
+                cdmLoading={cdmLoading}
+                selected={selected}
+                onSelect={setSelected}
+              />
+              <FeedHealth
+                live={live}
+                lastSync={lastSync}
+                tracked={stats.tracked}
+                cdmTracked={cdmObjects.length}
+                loading={loading || cdmLoading}
+                source={feedSource}
+              />
             </div>
           </main>
 
@@ -73,6 +117,7 @@ export default function App() {
               briefing={briefing}
               shap={shap}
               score={score}
+              predictionSource={predictionSource}
               features={features}
               loading={analyzing}
               onAnalyze={() => analyze(selected)}

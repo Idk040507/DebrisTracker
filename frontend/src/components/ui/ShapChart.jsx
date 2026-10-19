@@ -10,13 +10,19 @@ export default function ShapChart({ items = [] }) {
     return <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">SHAP drivers pending analysis.</p>;
   }
 
-  const max = Math.max(...items.map((item) => Math.abs(item.shap || 0)), 0.001);
+  const magnitudes = items.map((item) => {
+    const value = Number(item.shap);
+    return Number.isFinite(value) ? Math.abs(value) : 0;
+  });
+  const max = Math.max(...magnitudes);
 
   return (
     <div className="mt-4 space-y-2">
-      {items.map((item) => {
-        const width = `${(Math.abs(item.shap) / max) * 100}%`;
-        const positive = (item.shap || 0) >= 0;
+      {items.map((item, index) => {
+        const value = Number(item.shap);
+        const magnitude = magnitudes[index];
+        const width = `${max > 0 ? (magnitude / max) * 100 : 0}%`;
+        const positive = Number.isFinite(value) && value >= 0;
         return (
           <div key={item.feature}>
             <div className="flex justify-between font-mono text-[10px] text-slate-400">

@@ -8,6 +8,7 @@ const WHITE = new THREE.Color("#e2e8f0");
 
 export default function DebrisField({ objects = [], selectedId, onSelect }) {
   const mesh = useRef();
+  // Keep the globe interactive while the live catalog is unavailable.
   const count = Math.min(objects.length || 400, 800);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);

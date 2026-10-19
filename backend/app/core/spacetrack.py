@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timezone
 
@@ -10,7 +11,9 @@ import httpx
 from app.core.config import get_settings, spacetrack_configured
 
 GP_CACHE_TTL = 7200
-CDM_CACHE_TTL = 6 * 3600
+# Space-Track recommends downloading the full constellation CDM feed no more
+# than once every eight hours.
+CDM_CACHE_TTL = 8 * 3600
 GP_LIMIT = 400
 
 GROUP_OBJECT_TYPE = {
@@ -24,6 +27,26 @@ STATION_IDS = "25544,44713,48274,49044,54216,57320,58563,59540"
 _GP_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _CDM_CACHE: tuple[float, dict[str, dict]] | None = None
 _SPACETRACK_CLIENT = None
+_CDM_STATUS: dict[str, object] = {
+    "request_status": "not_checked",
+    "last_attempt_utc": None,
+    "last_success_utc": None,
+    "records_loaded": 0,
+    "objects_with_cdms": 0,
+    "source_class": None,
+    "last_error": None,
+}
+
+logger = logging.getLogger(__name__)
+
+
+def _utc_iso(timestamp: float | None = None) -> str:
+    value = (
+        datetime.fromtimestamp(timestamp, timezone.utc)
+        if timestamp is not None
+        else datetime.now(timezone.utc)
+    )
+    return value.isoformat().replace("+00:00", "Z")
 
 
 class SpaceTrackClient:
@@ -33,6 +56,7 @@ class SpaceTrackClient:
         self.settings = get_settings()
         self.base_url = self.settings.spacetrack_base_url.rstrip("/")
         self._client: httpx.AsyncClient | None = None
+        self.last_cdm_class: str | None = None
 
     def configured(self) -> bool:
         return bool(self.settings.spacetrack_identity and self.settings.spacetrack_password)
@@ -109,21 +133,29 @@ class SpaceTrackClient:
         return list(merged.values())
 
     async def get_cdm_public(self, limit: int = 1000) -> list[dict]:
-        for cls in ("cdm_public", "cdm"):
-            try:
-                path = (
-                    f"/basicspacedata/query/class/{cls}"
-                    f"/TCA/%3Enow-3"
-                    f"/orderby/TCA%20desc"
-                    f"/limit/{limit}"
-                    f"/format/json"
-                )
-                data = await self._get_json(path)
-                if isinstance(data, list):
-                    return data
-            except Exception:
-                continue
-        return []
+        # Space-Track exposes the public CDM class under basicspacedata.
+        # The expandedspacedata/cdm class is a separate, access-restricted feed.
+        path = (
+            "/basicspacedata/query/class/cdm_public"
+            f"/TCA/%3Enow-3"
+            f"/orderby/TCA%20desc"
+            f"/limit/{limit}"
+            f"/format/json"
+        )
+        try:
+            data = await self._get_json(path)
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(
+                f"Space-Track public CDM query failed: HTTP {exc.response.status_code}"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(
+                f"Space-Track public CDM query failed: {type(exc).__name__}"
+            ) from exc
+        if not isinstance(data, list):
+            raise RuntimeError("Space-Track public CDM query returned an unexpected response format")
+        self.last_cdm_class = "cdm_public"
+        return data
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
@@ -226,17 +258,105 @@ def _index_cdms(rows: list[dict]) -> dict[str, dict]:
 async def get_cdm_index() -> dict[str, dict]:
     global _CDM_CACHE
     if not spacetrack_configured():
+        _CDM_STATUS.update(
+            request_status="not_configured",
+            last_error="Space-Track credentials are not configured",
+        )
         return {}
     now = time.time()
     if _CDM_CACHE and now - _CDM_CACHE[0] < CDM_CACHE_TTL:
         return _CDM_CACHE[1]
+    stale_index = _CDM_CACHE[1] if _CDM_CACHE else {}
+    _CDM_STATUS.update(
+        request_status="loading",
+        last_attempt_utc=_utc_iso(now),
+        last_error=None,
+    )
     try:
-        rows = await get_spacetrack_client().get_cdm_public()
-    except Exception:
-        return _CDM_CACHE[1] if _CDM_CACHE else {}
+        client = get_spacetrack_client()
+        rows = await client.get_cdm_public()
+    except Exception as exc:
+        status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+        if isinstance(exc, RuntimeError):
+            # RuntimeErrors from get_cdm_public contain only safe class names,
+            # exception types, and HTTP status codes (never response bodies).
+            safe_error = str(exc)
+        else:
+            safe_error = f"{type(exc).__name__}" + (f" (HTTP {status_code})" if status_code else "")
+        logger.warning("Space-Track CDM retrieval failed: %s", safe_error)
+        _CDM_STATUS.update(
+            request_status="error",
+            last_error=safe_error,
+            objects_with_cdms=len(stale_index),
+        )
+        # Cache failures too, so selecting many objects cannot trigger repeated
+        # full-feed requests and exceed Space-Track's usage limits.
+        _CDM_CACHE = (now, stale_index)
+        return stale_index
     index = _index_cdms(rows if isinstance(rows, list) else [])
     _CDM_CACHE = (now, index)
+    _CDM_STATUS.update(
+        request_status="success",
+        last_success_utc=_utc_iso(now),
+        records_loaded=len(rows),
+        objects_with_cdms=len(index),
+        source_class=client.last_cdm_class,
+        last_error=None,
+    )
     return index
+
+
+def get_cdm_status() -> dict[str, object]:
+    """Return diagnostics and public NORAD IDs present in the cached CDM feed."""
+    index = _CDM_CACHE[1] if _CDM_CACHE else {}
+    return {
+        "configured": spacetrack_configured(),
+        **_CDM_STATUS,
+        "norad_ids": sorted(index),
+        "cache_ttl_seconds": CDM_CACHE_TTL,
+    }
+
+
+def get_cdm_objects() -> list[dict[str, object]]:
+    """Return one selectable, lightweight record for each NORAD ID in the CDM index."""
+    index = _CDM_CACHE[1] if _CDM_CACHE else {}
+    objects: list[dict[str, object]] = []
+    for norad_id, cdm in index.items():
+        sat1_id = str(cdm.get("SAT1_ID") or cdm.get("SAT_1_ID") or "")
+        sat2_id = str(cdm.get("SAT2_ID") or cdm.get("SAT_2_ID") or "")
+        is_sat1 = norad_id == sat1_id or not sat2_id
+        name = (
+            cdm.get("SAT1_NAME") or cdm.get("SAT_1_NAME")
+            if is_sat1
+            else cdm.get("SAT2_NAME") or cdm.get("SAT_2_NAME")
+        )
+        partner_name = (
+            cdm.get("SAT2_NAME") or cdm.get("SAT_2_NAME")
+            if is_sat1
+            else cdm.get("SAT1_NAME") or cdm.get("SAT_1_NAME")
+        )
+        objects.append(
+            {
+                "id": norad_id,
+                "name": str(name or f"NORAD {norad_id}"),
+                "conjunction_name": str(partner_name) if partner_name else None,
+                "cdm_id": cdm.get("CDM_ID"),
+                "tca": cdm.get("TCA"),
+                "pc": _safe_float(cdm.get("PC")),
+                "miss_distance_km": _cdm_miss_km(cdm),
+                "feature_source": "spacetrack-cdm",
+            }
+        )
+    return sorted(objects, key=lambda item: str(item.get("tca") or "9999"))
+
+
+def _safe_float(value: object) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 async def get_cdm_for_norad(norad_id: str | int) -> dict | None:
@@ -249,6 +369,8 @@ __all__ = [
     "fetch_group",
     "get_cdm_for_norad",
     "get_cdm_index",
+    "get_cdm_objects",
+    "get_cdm_status",
     "get_gp_history",
     "get_spacetrack_client",
     "_cdm_miss_km",

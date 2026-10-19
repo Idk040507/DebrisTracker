@@ -5,6 +5,7 @@ export function useRiskAnalysis(selected) {
   const [briefing, setBriefing] = useState("");
   const [shap, setShap] = useState([]);
   const [score, setScore] = useState(null);
+  const [predictionSource, setPredictionSource] = useState(null);
   const [features, setFeatures] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -16,6 +17,7 @@ export function useRiskAnalysis(selected) {
       const { data } = await api.post("/api/conjunctions/score", { object });
       setShap(data.shap || []);
       setScore(data.prediction?.risk_score ?? null);
+      setPredictionSource(data.prediction?.source ?? null);
       setFeatures(data.features || null);
     } catch (error) {
       setBriefing(error.message || "Scoring failed");
@@ -43,6 +45,7 @@ export function useRiskAnalysis(selected) {
       setBriefing(data.briefing || "");
       setShap(data.shap || []);
       setScore(data.prediction?.risk_score ?? null);
+      setPredictionSource(data.prediction?.source ?? null);
       setFeatures(data.features || null);
     } catch (error) {
       const msg = error.response?.data?.detail || error.message || "Analysis failed";
@@ -56,11 +59,12 @@ export function useRiskAnalysis(selected) {
     setBriefing("");
     setShap([]);
     setScore(null);
+    setPredictionSource(null);
     setFeatures(null);
     if (selected) {
       scoreObject(selected);
     }
   }, [selected?.id, scoreObject]);
 
-  return { briefing, shap, score, features, analyze, loading };
+  return { briefing, shap, score, predictionSource, features, analyze, loading };
 }

@@ -7,8 +7,18 @@ function formatUtc(date) {
   return date.toISOString().slice(11, 19);
 }
 
-export default function Header({ live, onRefresh, loading }) {
+export default function Header({ live, source = "none", cdmLive = false, onRefresh, loading }) {
   const [now, setNow] = useState(() => new Date());
+  const sourceLabel = live
+    ? source === "spacetrack"
+      ? "SPACE-TRACK LIVE"
+      : source === "mixed"
+        ? "MIXED CATALOG LIVE"
+        : "CELESTRAK LIVE"
+    : cdmLive
+      ? "CDM LIVE · CATALOG OFFLINE"
+      : "CATALOG OFFLINE";
+  const sourceColor = live || cdmLive ? "#00f2ff" : "#ffa500";
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -37,11 +47,11 @@ export default function Header({ live, onRefresh, loading }) {
       <div className="pointer-events-auto flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.18em]">
         <div className="flex items-center gap-2">
           <span
-            className={`h-1.5 w-1.5 rounded-full ${live ? "bg-[var(--hud-cyan)] shadow-[0_0_8px_#00f2ff]" : "bg-amber-500"}`}
+            className={`h-1.5 w-1.5 rounded-full ${live || cdmLive ? "bg-[var(--hud-cyan)] shadow-[0_0_8px_#00f2ff]" : "bg-amber-500"}`}
           />
           <ShinyText
-            text={live ? "CELESTRAK LIVE" : "CELESTRAK OFFLINE"}
-            color={live ? "#00f2ff" : "#ffa500"}
+            text={sourceLabel}
+            color={sourceColor}
             shineColor="#ffffff"
             speed={4}
             className="text-[11px]"
